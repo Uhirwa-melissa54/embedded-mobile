@@ -1,7 +1,5 @@
 # EdgeWallet RFID Payment System
 
-Live URL: http://157.173.101.159:9256/
-
 
 
 A complete RFID-based payment system featuring real-time card management, transaction tracking, and a modern dashboard interface built with ESP8266, MQTT, and MongoDB.
@@ -44,14 +42,14 @@ A complete RFID-based payment system featuring real-time card management, transa
 ### Team Information
 | Component | Value |
 |-----------|-------|
-| **Team ID** | `bright_sandracp_isaac` |
+| **Team ID** | `K2m2zI` |
 | **VPS Server** | 157.173.101.159 |
 | **Backend Port** | 8256 |
 | **Frontend Port** | 9256 |
 | **MQTT Broker** | 157.173.101.159:1883 |
 
 ### Technology Stack
-- **Frontend**: HTML5, CSS3, JavaScript, Socket.IO Client
+- **Mobile**: React Native, CSS3, JavaScript, Socket.IO Client
 - **Backend**: Node.js, Express, Socket.IO, Mongoose, MQTT.js
 - **Database**: MongoDB Atlas
 - **Hardware**: ESP8266 (NodeMCU), MFRC522 RFID Reader
@@ -85,21 +83,19 @@ npm install
 npm run dev
 ```
 
-**Terminal 2 - Frontend:**
+**Terminal 2 - Mobile:**
 ```bash
-cd frontend
+cd mobile
 npm install
-npm start
+npx expo start
 ```
 
 ### Access Points
 
 **Local Development:**
-- Frontend: http://localhost:8256
 - Backend API: http://localhost:8256
 
 **Production (VPS):**
-- Frontend: http://157.173.101.159:9256
 - Backend API: http://157.173.101.159:8256
 
 ---
