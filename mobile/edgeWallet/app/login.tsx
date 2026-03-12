@@ -190,7 +190,7 @@ export default function LoginScreen() {
         {/* Footer */}
         <View style={styles.footer}>
           <ThemedText style={styles.footerText}>
-            Team ID: bright_sandracp_isaac
+            Team ID: k2m2zI
           </ThemedText>
         </View>
       </ThemedView>
