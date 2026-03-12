@@ -1,5 +1,5 @@
 // API Service for EdgeWallet
-const API_BASE_URL = 'http://157.173.101.159:8256';
+const API_BASE_URL = 'http://10.12.72.178:8256';
 
 export interface Card {
   uid: string;

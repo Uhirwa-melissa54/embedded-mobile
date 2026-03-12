@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { Card } from '@/services/api';
 
 interface BalanceCardProps {
@@ -9,38 +9,50 @@ interface BalanceCardProps {
 const BalanceCard: React.FC<BalanceCardProps> = ({ card }) => {
   return (
     <View style={styles.card}>
+      {/* Accent top bar */}
+      <View style={styles.accentBar} />
+
       <View style={styles.cardHeader}>
         <View>
-          <Text style={styles.cardTitle}>EdgeWallet</Text>
-          <Text style={styles.cardSubtitle}>RFID Payment Card</Text>
+          <Text style={styles.cardTitle}>EDGE<Text style={styles.cardTitleThin}>WALLET</Text></Text>
+          <Text style={styles.cardSubtitle}>RFID PAYMENT CARD</Text>
         </View>
         <View style={styles.chipContainer}>
-          <View style={styles.chip} />
-          <View style={styles.contactless}>
-            <Text style={styles.contactlessIcon}>📡</Text>
+          <View style={styles.chip}>
+            <View style={styles.chipLines}>
+              <View style={styles.chipLine} />
+              <View style={styles.chipLine} />
+              <View style={styles.chipLine} />
+            </View>
           </View>
+          <Text style={styles.contactlessIcon}>📡</Text>
         </View>
       </View>
-      
+
       <View style={styles.cardMiddle}>
-        <Text style={styles.cardNumber}>**** **** **** {card.uid.slice(-4)}</Text>
+        <Text style={styles.cardNumberLabel}>CARD NUMBER</Text>
+        <Text style={styles.cardNumber}>
+          ****  ****  ****  {card.uid.slice(-4)}
+        </Text>
       </View>
-      
+
+      <View style={styles.divider} />
+
       <View style={styles.cardFooter}>
         <View style={styles.cardInfo}>
           <Text style={styles.label}>CARD HOLDER</Text>
-          <Text style={styles.value}>{card.holderName}</Text>
+          <Text style={styles.value}>{card.holderName.toUpperCase()}</Text>
         </View>
-        <View style={styles.cardInfo}>
+        <View style={[styles.cardInfo, { alignItems: 'flex-end' }]}>
           <Text style={styles.label}>BALANCE</Text>
-          <Text style={styles.value}>${card.balance.toFixed(2)}</Text>
+          <Text style={styles.balanceValue}>${card.balance.toFixed(2)}</Text>
         </View>
       </View>
-      
+
       <View style={styles.brandContainer}>
         <View style={styles.mcCircles}>
-          <View style={[styles.circle, styles.circleRed]} />
-          <View style={[styles.circle, styles.circleYellow]} />
+          <View style={[styles.circle, styles.circleFirst]} />
+          <View style={[styles.circle, styles.circleSecond]} />
         </View>
       </View>
     </View>
@@ -49,60 +61,92 @@ const BalanceCard: React.FC<BalanceCardProps> = ({ card }) => {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#1e293b',
-    borderRadius: 20,
-    padding: 24,
+    backgroundColor: '#0f0f0f',
+    borderWidth: 1,
+    borderColor: '#1a1a1a',
+    padding: 20,
     minHeight: 220,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  accentBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: '#e8ff5a',
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 24,
+    marginTop: 4,
   },
   cardTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
+    color: '#f0f0f0',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 3,
+  },
+  cardTitleThin: {
+    fontWeight: '300',
   },
   cardSubtitle: {
-    color: '#94a3b8',
-    fontSize: 11,
-    marginTop: 2,
+    color: '#333',
+    fontSize: 8,
+    letterSpacing: 2,
+    fontWeight: '700',
+    marginTop: 4,
   },
   chipContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
   },
   chip: {
-    width: 40,
-    height: 30,
-    backgroundColor: '#FFD700',
-    borderRadius: 6,
-  },
-  contactless: {
-    width: 24,
-    height: 24,
+    width: 36,
+    height: 26,
+    backgroundColor: '#e8ff5a',
+    borderRadius: 4,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
+  },
+  chipLines: {
+    width: '100%',
+    paddingHorizontal: 6,
+    gap: 3,
+  },
+  chipLine: {
+    height: 1,
+    backgroundColor: 'rgba(0,0,0,0.15)',
   },
   contactlessIcon: {
-    fontSize: 16,
+    fontSize: 14,
   },
   cardMiddle: {
-    marginBottom: 24,
+    marginBottom: 20,
+  },
+  cardNumberLabel: {
+    fontSize: 7,
+    letterSpacing: 2,
+    color: '#2a2a2a',
+    fontWeight: '700',
+    marginBottom: 6,
   },
   cardNumber: {
-    color: '#fff',
-    fontSize: 20,
+    color: '#555',
+    fontSize: 18,
     letterSpacing: 3,
     fontWeight: '500',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#1a1a1a',
+    marginBottom: 16,
   },
   cardFooter: {
     flexDirection: 'row',
@@ -113,38 +157,47 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   label: {
-    color: '#94a3b8',
-    fontSize: 10,
-    marginBottom: 4,
-    letterSpacing: 1,
+    color: '#333',
+    fontSize: 8,
+    marginBottom: 6,
+    letterSpacing: 2,
+    fontWeight: '700',
   },
   value: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
+    color: '#d0d0d0',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+  },
+  balanceValue: {
+    color: '#e8ff5a',
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.5,
   },
   brandContainer: {
     alignItems: 'flex-end',
   },
   mcCircles: {
     flexDirection: 'row',
-    width: 40,
-    height: 24,
+    width: 36,
+    height: 22,
   },
   circle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     position: 'absolute',
   },
-  circleRed: {
-    backgroundColor: '#eb001b',
+  circleFirst: {
+    backgroundColor: '#e8ff5a',
     left: 0,
+    opacity: 0.7,
   },
-  circleYellow: {
-    backgroundColor: '#f79e1b',
-    left: 16,
-    opacity: 0.9,
+  circleSecond: {
+    backgroundColor: '#5ae8c8',
+    left: 14,
+    opacity: 0.7,
   },
 });
 

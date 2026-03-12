@@ -32,9 +32,9 @@ export default function PaymentScreen() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [cartExpanded, setCartExpanded] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const cartSlide = useRef(new Animated.Value(300)).current;
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -59,15 +59,6 @@ export default function PaymentScreen() {
     mqttService.subscribe(TOPICS.STATUS, handleCardStatus);
     return () => mqttService.unsubscribe(TOPICS.STATUS, handleCardStatus);
   }, []);
-
-  useEffect(() => {
-    Animated.spring(cartSlide, {
-      toValue: cart.length > 0 ? 0 : 300,
-      useNativeDriver: true,
-      tension: 80,
-      friction: 12,
-    }).start();
-  }, [cart.length > 0]);
 
   const loadProducts = async () => {
     try {
@@ -128,6 +119,7 @@ export default function PaymentScreen() {
       setActiveCard(updatedCard);
       Alert.alert('Payment Complete', `New balance: $${updatedCard.balance.toFixed(2)}`);
       setCart([]);
+      setCartExpanded(false);
     } catch (err: any) {
       Alert.alert('Payment Failed', err.message || 'Unknown error');
     } finally {
@@ -152,9 +144,9 @@ export default function PaymentScreen() {
         ))}
       </View>
 
-      <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
-        {/* LEFT — Marketplace */}
-        <View style={styles.marketplace}>
+      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+        <Animated.View style={{ opacity: fadeAnim }}>
+
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.logoRow}>
@@ -201,40 +193,44 @@ export default function PaymentScreen() {
           </ScrollView>
 
           {/* Products */}
-          <ScrollView style={styles.productsScroll} showsVerticalScrollIndicator={false}>
-            <View style={styles.productsGrid}>
-              {filteredItems.map(item => (
-                <ProductCard
-                  key={item._id}
-                  product={item}
-                  onAdd={() => addToCart(item, item.type)}
-                />
-              ))}
-            </View>
-          </ScrollView>
-        </View>
+          <View style={styles.productsGrid}>
+            {filteredItems.map(item => (
+              <ProductCard
+                key={item._id}
+                product={item}
+                onAdd={() => addToCart(item, item.type)}
+              />
+            ))}
+          </View>
+        </Animated.View>
+      </ScrollView>
 
-        {/* RIGHT — Cart */}
+      {/* Cart panel — bottom overlay */}
+      {cart.length > 0 && (
         <View style={styles.cartPanel}>
-          {/* Cart header */}
-          <View style={styles.cartHeader}>
-            <Text style={styles.cartTitle}>CART</Text>
-            {cart.length > 0 && (
+          {/* Cart summary bar — always visible */}
+          <TouchableOpacity
+            style={styles.cartSummaryBar}
+            onPress={() => setCartExpanded(!cartExpanded)}
+            activeOpacity={0.85}
+          >
+            <View style={styles.cartSummaryLeft}>
               <View style={styles.cartBadge}>
                 <Text style={styles.cartBadgeText}>{getTotalItems()}</Text>
               </View>
-            )}
-          </View>
-          <View style={styles.cartRule} />
-
-          {cart.length === 0 ? (
-            <View style={styles.cartEmpty}>
-              <Text style={styles.cartEmptyIcon}>▱▱▱</Text>
-              <Text style={styles.cartEmptyTitle}>EMPTY</Text>
-              <Text style={styles.cartEmptySubtitle}>Add products to begin</Text>
+              <Text style={styles.cartSummaryTitle}>CART</Text>
             </View>
-          ) : (
-            <>
+            <View style={styles.cartSummaryRight}>
+              <Text style={styles.cartSummaryTotal}>${getTotalAmount().toFixed(2)}</Text>
+              <Text style={styles.cartChevron}>{cartExpanded ? '▼' : '▲'}</Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Expanded cart items */}
+          {cartExpanded && (
+            <View style={styles.cartExpanded}>
+              <View style={styles.cartRule} />
+
               <ScrollView style={styles.cartItems} showsVerticalScrollIndicator={false}>
                 {cart.map((item, index) => (
                   <View key={item.id} style={styles.cartItem}>
@@ -265,43 +261,40 @@ export default function PaymentScreen() {
                   </View>
                 ))}
               </ScrollView>
-
-              {/* Cart footer */}
-              <View style={styles.cartFooter}>
-                <View style={styles.totalRow}>
-                  <Text style={styles.totalLabel}>TOTAL</Text>
-                  <Text style={styles.totalValue}>${getTotalAmount().toFixed(2)}</Text>
-                </View>
-
-                {activeCard && (
-                  <View style={styles.balanceRow}>
-                    <Text style={styles.balanceLabel}>REMAINING</Text>
-                    <Text style={[
-                      styles.balanceValue,
-                      activeCard.balance - getTotalAmount() < 0 ? styles.balanceNeg : styles.balancePos
-                    ]}>
-                      ${(activeCard.balance - getTotalAmount()).toFixed(2)}
-                    </Text>
-                  </View>
-                )}
-
-                <TouchableOpacity
-                  style={[styles.payBtn, (!activeCard || loading) && styles.payBtnDisabled]}
-                  onPress={handlePayment}
-                  disabled={!activeCard || loading}
-                  activeOpacity={0.85}
-                >
-                  {loading ? (
-                    <ActivityIndicator color="#0a0a0a" size="small" />
-                  ) : (
-                    <Text style={styles.payBtnText}>CONFIRM PAYMENT →</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </>
+            </View>
           )}
+
+          {/* Cart footer with pay button */}
+          <View style={styles.cartFooter}>
+            {activeCard && cartExpanded && (
+              <View style={styles.balanceRow}>
+                <Text style={styles.balanceLabel}>REMAINING</Text>
+                <Text style={[
+                  styles.balanceValue,
+                  activeCard.balance - getTotalAmount() < 0 ? styles.balanceNeg : styles.balancePos
+                ]}>
+                  ${(activeCard.balance - getTotalAmount()).toFixed(2)}
+                </Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[styles.payBtn, (!activeCard || loading) && styles.payBtnDisabled]}
+              onPress={handlePayment}
+              disabled={!activeCard || loading}
+              activeOpacity={0.85}
+            >
+              {loading ? (
+                <ActivityIndicator color="#0a0a0a" size="small" />
+              ) : (
+                <Text style={[styles.payBtnText, (!activeCard || loading) && styles.payBtnTextDisabled]}>
+                  CONFIRM PAYMENT →
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
-      </Animated.View>
+      )}
     </View>
   );
 }
@@ -322,21 +315,15 @@ const styles = StyleSheet.create({
     width: 1,
     backgroundColor: 'rgba(255,255,255,0.03)',
   },
-  container: {
+  scroll: {
     flex: 1,
-    flexDirection: 'row',
   },
 
-  // Marketplace (left)
-  marketplace: {
-    flex: 1,
-    borderRightWidth: 1,
-    borderRightColor: '#161616',
-  },
+  // Header
   header: {
-    paddingHorizontal: 20,
-    paddingTop: 56,
-    paddingBottom: 16,
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 0,
   },
   logoRow: {
     flexDirection: 'row',
@@ -351,7 +338,7 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '45deg' }],
   },
   logoText: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '800',
     letterSpacing: 4,
     color: '#f0f0f0',
@@ -360,11 +347,11 @@ const styles = StyleSheet.create({
     fontWeight: '300',
   },
   tagline: {
-    fontSize: 8,
+    fontSize: 9,
     letterSpacing: 3,
     color: '#2a2a2a',
     fontWeight: '700',
-    marginBottom: 14,
+    marginBottom: 16,
   },
   headerRule: {
     height: 1,
@@ -375,8 +362,8 @@ const styles = StyleSheet.create({
   cardStrip: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 20,
-    marginTop: 14,
+    marginHorizontal: 24,
+    marginTop: 16,
     marginBottom: 4,
     paddingVertical: 12,
     paddingHorizontal: 14,
@@ -424,17 +411,17 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   noCard: {
-    marginHorizontal: 20,
-    marginTop: 14,
+    marginHorizontal: 24,
+    marginTop: 16,
     marginBottom: 4,
-    paddingVertical: 10,
+    paddingVertical: 14,
     borderWidth: 1,
     borderColor: '#1a1a1a',
     borderStyle: 'dashed',
     alignItems: 'center',
   },
   noCardText: {
-    fontSize: 8,
+    fontSize: 9,
     letterSpacing: 3,
     color: '#2a2a2a',
     fontWeight: '700',
@@ -446,7 +433,7 @@ const styles = StyleSheet.create({
     maxHeight: 40,
   },
   catContent: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
     gap: 8,
   },
   catTab: {
@@ -464,51 +451,51 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 2,
-    color: '#333',
+    color: '#444',
   },
   catTabTextActive: {
     color: '#0a0a0a',
   },
 
   // Products
-  productsScroll: {
-    flex: 1,
-    marginTop: 16,
-  },
   productsGrid: {
-    paddingHorizontal: 20,
-    paddingBottom: 32,
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 120,
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
+    justifyContent: 'space-between',
   },
 
-  // Cart panel (right)
+  // Cart panel (bottom overlay)
   cartPanel: {
-    width: 280,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     backgroundColor: '#080808',
-    borderLeftWidth: 1,
-    borderLeftColor: '#161616',
+    borderTopWidth: 1,
+    borderTopColor: '#1e1e1e',
+    maxHeight: '60%',
   },
-  cartHeader: {
+  cartSummaryBar: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: 56,
-    paddingBottom: 16,
-    gap: 10,
+    paddingVertical: 14,
   },
-  cartTitle: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 4,
-    color: '#e0e0e0',
+  cartSummaryLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   cartBadge: {
     backgroundColor: '#e8ff5a',
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    minWidth: 22,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    minWidth: 24,
     alignItems: 'center',
   },
   cartBadgeText: {
@@ -516,45 +503,43 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
   },
+  cartSummaryTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 3,
+    color: '#e0e0e0',
+  },
+  cartSummaryRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  cartSummaryTotal: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#e8ff5a',
+    letterSpacing: -0.5,
+  },
+  cartChevron: {
+    fontSize: 10,
+    color: '#555',
+  },
   cartRule: {
     height: 1,
     backgroundColor: '#161616',
     marginHorizontal: 20,
   },
 
-  // Empty
-  cartEmpty: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
+  // Expanded cart
+  cartExpanded: {
+    maxHeight: 250,
   },
-  cartEmptyIcon: {
-    fontSize: 20,
-    color: '#1e1e1e',
-    letterSpacing: 4,
-    marginBottom: 8,
-  },
-  cartEmptyTitle: {
-    fontSize: 10,
-    letterSpacing: 4,
-    color: '#222',
-    fontWeight: '800',
-  },
-  cartEmptySubtitle: {
-    fontSize: 10,
-    color: '#1e1e1e',
-    letterSpacing: 1,
-  },
-
-  // Cart items
   cartItems: {
-    flex: 1,
     paddingTop: 8,
   },
   cartItem: {
     paddingHorizontal: 20,
-    paddingTop: 14,
+    paddingTop: 12,
   },
   cartItemTop: {
     flexDirection: 'row',
@@ -588,15 +573,15 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   removeBtn: {
-    width: 22,
-    height: 22,
+    width: 24,
+    height: 24,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#222',
   },
   removeBtnText: {
-    color: '#333',
+    color: '#444',
     fontSize: 10,
     fontWeight: '700',
   },
@@ -617,8 +602,8 @@ const styles = StyleSheet.create({
     gap: 0,
   },
   qtyBtn: {
-    width: 26,
-    height: 26,
+    width: 28,
+    height: 28,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#111',
@@ -642,37 +627,22 @@ const styles = StyleSheet.create({
   cartItemRule: {
     height: 1,
     backgroundColor: '#111',
-    marginTop: 14,
+    marginTop: 12,
   },
 
   // Cart footer
   cartFooter: {
-    padding: 20,
+    padding: 16,
+    paddingBottom: 20,
     borderTopWidth: 1,
     borderTopColor: '#161616',
-    gap: 10,
-  },
-  totalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-  },
-  totalLabel: {
-    fontSize: 9,
-    letterSpacing: 3,
-    color: '#333',
-    fontWeight: '700',
-  },
-  totalValue: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#e8ff5a',
-    letterSpacing: -0.5,
+    gap: 8,
   },
   balanceRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 4,
   },
   balanceLabel: {
     fontSize: 8,
@@ -691,7 +661,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#e8ff5a',
     paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 4,
   },
   payBtnDisabled: {
     backgroundColor: '#1a1a1a',
@@ -701,5 +670,8 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 3,
+  },
+  payBtnTextDisabled: {
+    color: '#333',
   },
 });

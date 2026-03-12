@@ -82,7 +82,7 @@ npm install
 The app is pre-configured to connect to:
 - **Backend API**: `http://157.173.101.159:8256`
 - **MQTT Broker**: `mqtt://157.173.101.159:1883`
-- **Team ID**: `bright_sandracp_isaac`
+- **Team ID**: `K2z2mI`
 
 To change these settings, edit:
 - `services/api.ts` for API endpoint
@@ -254,4 +254,4 @@ This project is part of the EdgeWallet RFID Payment System assignment.
 
 ## Team
 
-Team ID: bright_sandracp_isaac
+Team ID: K2z2mI

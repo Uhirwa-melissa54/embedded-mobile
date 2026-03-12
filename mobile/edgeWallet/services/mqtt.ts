@@ -2,7 +2,7 @@
 import mqtt from 'mqtt';
 
 const MQTT_BROKER = 'mqtt://157.173.101.159:1883';
-const TEAM_ID = 'bright_sandracp_isaac';
+const TEAM_ID = 'K2z2mI';
 
 export const TOPICS = {
   STATUS: `rfid/${TEAM_ID}/card/status`,

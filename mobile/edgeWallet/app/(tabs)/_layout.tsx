@@ -34,21 +34,22 @@ export default function TabLayout() {
 
         // ── Tab bar ──────────────────────────────────────────
         tabBarStyle: {
-          backgroundColor: '#080808',
+          backgroundColor: 'rgba(8,8,8,0.95)',
           borderTopWidth: 1,
-          borderTopColor: '#161616',
-          height: Platform.OS === 'ios' ? 88 : 64,
-          paddingBottom: Platform.OS === 'ios' ? 28 : 10,
-          paddingTop: 10,
+          borderTopColor: '#1e1e1e',
+          height: Platform.OS === 'ios' ? 92 : 70,
+          paddingBottom: Platform.OS === 'ios' ? 28 : 12,
+          paddingTop: 12,
           ...(Platform.OS === 'ios' ? { position: 'absolute' } : {}),
         },
         tabBarActiveTintColor: '#e8ff5a',
-        tabBarInactiveTintColor: '#2a2a2a',
+        tabBarInactiveTintColor: '#555555',
         tabBarLabelStyle: {
-          fontSize: 8,
+          fontSize: 9,
           fontWeight: '700',
           letterSpacing: 2,
           textTransform: 'uppercase',
+          marginTop: 4,
         },
 
         // ── Header ───────────────────────────────────────────
@@ -86,7 +87,7 @@ export default function TabLayout() {
             <IconSymbol
               size={16}
               name="rectangle.portrait.and.arrow.right"
-              color="#333"
+              color="#555"
             />
           </TouchableOpacity>
         ),
@@ -132,6 +133,13 @@ export default function TabLayout() {
           ),
         }}
       />
+      {/* Hide explore tab from navigation */}
+      <Tabs.Screen
+        name="explore"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }
@@ -149,8 +157,13 @@ function TabIcon({
 }) {
   return (
     <View style={[styles.tabIconWrapper, focused && styles.tabIconWrapperFocused]}>
+      {/* Glow backdrop when focused */}
+      {focused && (
+        <View style={[styles.tabIconGlow, { backgroundColor: accent }]} />
+      )}
+      {/* Active dot indicator */}
       {focused && <View style={[styles.tabIconDot, { backgroundColor: accent }]} />}
-      <IconSymbol size={20} name={name} color={focused ? accent : '#2a2a2a'} />
+      <IconSymbol size={22} name={name} color={focused ? accent : '#555555'} />
     </View>
   );
 }
@@ -176,25 +189,32 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderWidth: 1,
-    borderColor: '#1a1a1a',
+    borderColor: '#1e1e1e',
     alignItems: 'center',
     justifyContent: 'center',
   },
   tabIconWrapper: {
-    width: 36,
-    height: 28,
+    width: 40,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
   },
   tabIconWrapperFocused: {
-    // subtle glow container — icon color handles the rest
+    // container for focused state
+  },
+  tabIconGlow: {
+    position: 'absolute',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    opacity: 0.08,
   },
   tabIconDot: {
     position: 'absolute',
-    top: 0,
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
+    top: -2,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
   },
 });
