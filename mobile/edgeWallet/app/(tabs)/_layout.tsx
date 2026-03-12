@@ -1,28 +1,23 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { Platform, TouchableOpacity, Alert } from 'react-native';
+import { Platform, TouchableOpacity, Alert, View, Text, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
-  
-  // Get current user role (in a real app, use AsyncStorage or Context)
   const currentUser = (global as any).currentUser || { role: 'agent' };
   const isAgent = currentUser.role === 'agent';
   const isSales = currentUser.role === 'sales';
 
   const handleLogout = () => {
     Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
+      'SIGN OUT',
+      'End your current session?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Logout',
+          text: 'Sign Out',
           style: 'destructive',
           onPress: () => {
             (global as any).currentUser = null;
@@ -36,60 +31,167 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: true,
         tabBarButton: HapticTab,
-        tabBarStyle: Platform.select({
-          ios: {
-            position: 'absolute',
-          },
-          default: {},
-        }),
+
+        // ── Tab bar ──────────────────────────────────────────
+        tabBarStyle: {
+          backgroundColor: '#080808',
+          borderTopWidth: 1,
+          borderTopColor: '#161616',
+          height: Platform.OS === 'ios' ? 88 : 64,
+          paddingBottom: Platform.OS === 'ios' ? 28 : 10,
+          paddingTop: 10,
+          ...(Platform.OS === 'ios' ? { position: 'absolute' } : {}),
+        },
+        tabBarActiveTintColor: '#e8ff5a',
+        tabBarInactiveTintColor: '#2a2a2a',
+        tabBarLabelStyle: {
+          fontSize: 8,
+          fontWeight: '700',
+          letterSpacing: 2,
+          textTransform: 'uppercase',
+        },
+
+        // ── Header ───────────────────────────────────────────
+        headerStyle: {
+          backgroundColor: '#080808',
+          borderBottomWidth: 1,
+          borderBottomColor: '#161616',
+          // Remove default shadow
+          shadowOpacity: 0,
+          elevation: 0,
+        },
+        headerTitleStyle: {
+          color: '#f0f0f0',
+          fontSize: 10,
+          fontWeight: '800',
+          letterSpacing: 4,
+          textTransform: 'uppercase',
+        },
+        headerTintColor: '#e8ff5a',
+
+        headerLeft: () => (
+          <View style={styles.headerLeft}>
+            <View style={styles.logoMark} />
+          </View>
+        ),
+
         headerRight: () => (
           <TouchableOpacity
             onPress={handleLogout}
-            style={{ marginRight: 16 }}
+            style={styles.logoutBtn}
+            activeOpacity={0.7}
           >
-            <IconSymbol size={24} name="rectangle.portrait.and.arrow.right" color={Colors[colorScheme ?? 'light'].tint} />
+            <IconSymbol
+              size={16}
+              name="rectangle.portrait.and.arrow.right"
+              color="#333"
+            />
           </TouchableOpacity>
         ),
-      }}>
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Dashboard',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
-          headerTitle: `Dashboard - ${currentUser.name || 'User'}`,
+          title: 'HOME',
+          headerTitle: 'DASHBOARD',
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon name="house.fill" color={color} focused={focused} />
+          ),
         }}
       />
       <Tabs.Screen
         name="topup"
         options={{
-          title: 'Top Up',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="plus.circle.fill" color={color} />,
-          headerTitle: 'Top Up Card',
-          // Hide for sales role
+          title: 'TOP UP',
+          headerTitle: 'TOP UP',
           href: isSales ? null : undefined,
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon name="plus.circle.fill" color={color} focused={focused} accent="#e8ff5a" />
+          ),
         }}
       />
       <Tabs.Screen
         name="payment"
         options={{
-          title: 'Payment',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="cart.fill" color={color} />,
-          headerTitle: 'Marketplace',
-          // Hide for agent role (optional - agents can also view marketplace)
-          // href: isAgent ? null : undefined,
+          title: 'MARKET',
+          headerTitle: 'MARKETPLACE',
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon name="cart.fill" color={color} focused={focused} accent="#5ae8c8" />
+          ),
         }}
       />
       <Tabs.Screen
         name="transactions"
         options={{
-          title: 'History',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="list.bullet" color={color} />,
-          headerTitle: 'Transaction History',
+          title: 'LEDGER',
+          headerTitle: 'LEDGER HISTORY',
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon name="list.bullet" color={color} focused={focused} />
+          ),
         }}
       />
     </Tabs>
   );
 }
+
+function TabIcon({
+  name,
+  color,
+  focused,
+  accent = '#e8ff5a',
+}: {
+  name: string;
+  color: string;
+  focused: boolean;
+  accent?: string;
+}) {
+  return (
+    <View style={[styles.tabIconWrapper, focused && styles.tabIconWrapperFocused]}>
+      {focused && <View style={[styles.tabIconDot, { backgroundColor: accent }]} />}
+      <IconSymbol size={20} name={name} color={focused ? accent : '#2a2a2a'} />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  headerLeft: {
+    marginLeft: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoMark: {
+    width: 8,
+    height: 8,
+    backgroundColor: '#e8ff5a',
+    transform: [{ rotate: '45deg' }],
+  },
+  logoutBtn: {
+    marginRight: 16,
+    width: 32,
+    height: 32,
+    borderWidth: 1,
+    borderColor: '#1a1a1a',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabIconWrapper: {
+    width: 36,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  tabIconWrapperFocused: {
+    // subtle glow container — icon color handles the rest
+  },
+  tabIconDot: {
+    position: 'absolute',
+    top: 0,
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+  },
+});

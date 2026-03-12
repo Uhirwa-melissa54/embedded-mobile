@@ -182,7 +182,6 @@ export default function LoginScreen() {
           <View style={styles.demoSection}>
             <View style={styles.demoHeader}>
               <View style={styles.demoDivider} />
-              <ThemedText style={styles.demoLabel}>DEMO ACCESS</ThemedText>
               <View style={styles.demoDivider} />
             </View>
 
