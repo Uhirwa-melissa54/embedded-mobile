@@ -1,18 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   ScrollView,
   View,
+  Text,
   TouchableOpacity,
   Alert,
   ActivityIndicator,
-  FlatList,
+  Animated,
+  Dimensions,
 } from 'react-native';
-import { ThemedView } from '@/components/themed-view';
-import { ThemedText } from '@/components/themed-text';
 import ProductCard from '@/components/ProductCard';
 import apiService, { Card, Product, Service } from '@/services/api';
 import mqttService, { TOPICS } from '@/services/mqtt';
+
+const { width } = Dimensions.get('window');
 
 interface CartItem {
   id: string;
@@ -31,10 +33,18 @@ export default function PaymentScreen() {
   const [loading, setLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('all');
 
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const cartSlide = useRef(new Animated.Value(300)).current;
+
   useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 500,
+      useNativeDriver: true,
+    }).start();
+
     loadProducts();
-    
-    // Listen for card scans
+
     const handleCardStatus = async (message: any) => {
       if (message.uid) {
         try {
@@ -47,11 +57,17 @@ export default function PaymentScreen() {
     };
 
     mqttService.subscribe(TOPICS.STATUS, handleCardStatus);
-
-    return () => {
-      mqttService.unsubscribe(TOPICS.STATUS, handleCardStatus);
-    };
+    return () => mqttService.unsubscribe(TOPICS.STATUS, handleCardStatus);
   }, []);
+
+  useEffect(() => {
+    Animated.spring(cartSlide, {
+      toValue: cart.length > 0 ? 0 : 300,
+      useNativeDriver: true,
+      tension: 80,
+      friction: 12,
+    }).start();
+  }, [cart.length > 0]);
 
   const loadProducts = async () => {
     try {
@@ -67,66 +83,39 @@ export default function PaymentScreen() {
   };
 
   const addToCart = (item: Product | Service, type: 'product' | 'service') => {
-    const existingItem = cart.find(i => i.id === item._id);
-    
-    if (existingItem) {
-      setCart(cart.map(i => 
-        i.id === item._id 
-          ? { ...i, quantity: i.quantity + 1 }
-          : i
-      ));
+    const existing = cart.find(i => i.id === item._id);
+    if (existing) {
+      setCart(cart.map(i => i.id === item._id ? { ...i, quantity: i.quantity + 1 } : i));
     } else {
-      setCart([...cart, {
-        id: item._id,
-        name: item.name,
-        price: item.price,
-        quantity: 1,
-        type,
-        emoji: item.emoji,
-      }]);
+      setCart([...cart, { id: item._id, name: item.name, price: item.price, quantity: 1, type, emoji: item.emoji }]);
     }
   };
 
-  const removeFromCart = (id: string) => {
-    setCart(cart.filter(item => item.id !== id));
-  };
+  const removeFromCart = (id: string) => setCart(cart.filter(i => i.id !== id));
 
   const updateQuantity = (id: string, delta: number) => {
-    setCart(cart.map(item => {
-      if (item.id === id) {
-        const newQuantity = item.quantity + delta;
-        return newQuantity > 0 ? { ...item, quantity: newQuantity } : item;
-      }
-      return item;
-    }).filter(item => item.quantity > 0));
+    setCart(
+      cart
+        .map(item => item.id === id ? { ...item, quantity: item.quantity + delta } : item)
+        .filter(item => item.quantity > 0)
+    );
   };
 
-  const getTotalAmount = () => {
-    return cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  };
+  const getTotalAmount = () => cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  const getTotalItems = () => cart.reduce((sum, i) => sum + i.quantity, 0);
 
   const handlePayment = async () => {
-    if (!activeCard) {
-      Alert.alert('Error', 'Please scan a card first');
-      return;
-    }
+    if (!activeCard) { Alert.alert('No Card', 'Please scan a card first'); return; }
+    if (cart.length === 0) { Alert.alert('Empty Cart', 'Add items before paying'); return; }
 
-    if (cart.length === 0) {
-      Alert.alert('Error', 'Cart is empty');
-      return;
-    }
-
-    const totalAmount = getTotalAmount();
-    
-    if (activeCard.balance < totalAmount) {
-      Alert.alert('Insufficient Balance', `Your balance ($${activeCard.balance.toFixed(2)}) is less than the total amount ($${totalAmount.toFixed(2)})`);
+    const total = getTotalAmount();
+    if (activeCard.balance < total) {
+      Alert.alert('Insufficient Balance', `Balance $${activeCard.balance.toFixed(2)} · Required $${total.toFixed(2)}`);
       return;
     }
 
     setLoading(true);
-
     try {
-      // Process each item in cart
       for (const item of cart) {
         await apiService.pay({
           card_uid: activeCard.uid,
@@ -135,351 +124,582 @@ export default function PaymentScreen() {
           quantity: item.quantity,
         });
       }
-
-      // Refresh card balance
       const updatedCard = await apiService.getCard(activeCard.uid);
       setActiveCard(updatedCard);
-      
-      Alert.alert('Success', `Payment successful! New balance: $${updatedCard.balance.toFixed(2)}`);
+      Alert.alert('Payment Complete', `New balance: $${updatedCard.balance.toFixed(2)}`);
       setCart([]);
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Payment failed');
+      Alert.alert('Payment Failed', err.message || 'Unknown error');
     } finally {
       setLoading(false);
     }
   };
 
   const categories = ['all', ...new Set([...products.map(p => p.category), ...services.map(s => s.category)])];
-  
   const filteredItems = selectedCategory === 'all'
     ? [...products.map(p => ({ ...p, type: 'product' as const })), ...services.map(s => ({ ...s, type: 'service' as const }))]
     : [
         ...products.filter(p => p.category === selectedCategory).map(p => ({ ...p, type: 'product' as const })),
-        ...services.filter(s => s.category === selectedCategory).map(s => ({ ...s, type: 'service' as const }))
+        ...services.filter(s => s.category === selectedCategory).map(s => ({ ...s, type: 'service' as const })),
       ];
 
   return (
-    <View style={styles.container}>
-      <ScrollView style={styles.mainContent}>
-        <ThemedView style={styles.header}>
-          <ThemedText type="title">Marketplace</ThemedText>
-          <ThemedText style={styles.subtitle}>Select products to purchase</ThemedText>
-        </ThemedView>
-
-        {activeCard && (
-          <View style={styles.cardInfo}>
-            <View style={styles.cardDot} />
-            <View>
-              <ThemedText style={styles.cardText}>{activeCard.holderName}</ThemedText>
-              <ThemedText style={styles.cardBalance}>Balance: ${activeCard.balance.toFixed(2)}</ThemedText>
-            </View>
-          </View>
-        )}
-
-        {/* Category Tabs */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryTabs}>
-          {categories.map(category => (
-            <TouchableOpacity
-              key={category}
-              style={[styles.categoryTab, selectedCategory === category && styles.categoryTabActive]}
-              onPress={() => setSelectedCategory(category)}
-            >
-              <ThemedText style={[styles.categoryTabText, selectedCategory === category && styles.categoryTabTextActive]}>
-                {category.charAt(0).toUpperCase() + category.slice(1)}
-              </ThemedText>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        {/* Products Grid */}
-        <View style={styles.productsGrid}>
-          {filteredItems.map(item => (
-            <ProductCard
-              key={item._id}
-              product={item}
-              onAdd={() => addToCart(item, item.type)}
-            />
-          ))}
-        </View>
-      </ScrollView>
-
-      {/* Cart Section */}
-      <View style={styles.cartSection}>
-        <View style={styles.cartHeader}>
-          <ThemedText style={styles.cartTitle}>Cart</ThemedText>
-          <View style={styles.cartBadge}>
-            <ThemedText style={styles.cartBadgeText}>{cart.length}</ThemedText>
-          </View>
-        </View>
-
-        {cart.length === 0 ? (
-          <View style={styles.cartEmpty}>
-            <ThemedText style={styles.cartEmptyText}>🛒</ThemedText>
-            <ThemedText style={styles.cartEmptySubtext}>Add products to cart</ThemedText>
-          </View>
-        ) : (
-          <>
-            <ScrollView style={styles.cartItems}>
-              {cart.map(item => (
-                <View key={item.id} style={styles.cartItem}>
-                  <View style={styles.cartItemInfo}>
-                    <ThemedText style={styles.cartItemEmoji}>{item.emoji}</ThemedText>
-                    <View style={styles.cartItemDetails}>
-                      <ThemedText style={styles.cartItemName}>{item.name}</ThemedText>
-                      <ThemedText style={styles.cartItemPrice}>${item.price.toFixed(2)}</ThemedText>
-                    </View>
-                  </View>
-                  <View style={styles.cartItemActions}>
-                    <TouchableOpacity onPress={() => updateQuantity(item.id, -1)} style={styles.quantityBtn}>
-                      <ThemedText>-</ThemedText>
-                    </TouchableOpacity>
-                    <ThemedText style={styles.quantity}>{item.quantity}</ThemedText>
-                    <TouchableOpacity onPress={() => updateQuantity(item.id, 1)} style={styles.quantityBtn}>
-                      <ThemedText>+</ThemedText>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => removeFromCart(item.id)} style={styles.removeBtn}>
-                      <ThemedText style={styles.removeBtnText}>×</ThemedText>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))}
-            </ScrollView>
-
-            <View style={styles.cartFooter}>
-              <View style={styles.cartTotal}>
-                <ThemedText style={styles.cartTotalLabel}>Total</ThemedText>
-                <ThemedText style={styles.cartTotalValue}>${getTotalAmount().toFixed(2)}</ThemedText>
-              </View>
-              <TouchableOpacity
-                style={[styles.payButton, (!activeCard || loading) && styles.payButtonDisabled]}
-                onPress={handlePayment}
-                disabled={!activeCard || loading}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <ThemedText style={styles.payButtonText}>Pay Now</ThemedText>
-                )}
-              </TouchableOpacity>
-            </View>
-          </>
-        )}
+    <View style={styles.root}>
+      {/* BG grid */}
+      <View style={styles.gridOverlay} pointerEvents="none">
+        {[...Array(6)].map((_, i) => (
+          <View key={i} style={[styles.gridLine, { left: (width / 6) * i }]} />
+        ))}
       </View>
+
+      <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
+        {/* LEFT — Marketplace */}
+        <View style={styles.marketplace}>
+          {/* Header */}
+          <View style={styles.header}>
+            <View style={styles.logoRow}>
+              <View style={styles.logoMark} />
+              <Text style={styles.logoText}>MARKET<Text style={styles.logoThin}>PLACE</Text></Text>
+            </View>
+            <Text style={styles.tagline}>SELECT PRODUCTS TO PURCHASE</Text>
+            <View style={styles.headerRule} />
+          </View>
+
+          {/* Active card strip */}
+          {activeCard ? (
+            <View style={styles.cardStrip}>
+              <View style={styles.cardStripDot} />
+              <View style={styles.cardStripInfo}>
+                <Text style={styles.cardStripName}>{activeCard.holderName.toUpperCase()}</Text>
+                <Text style={styles.cardStripUid}>{activeCard.uid}</Text>
+              </View>
+              <View style={styles.cardStripBalance}>
+                <Text style={styles.cardStripBalanceLabel}>BALANCE</Text>
+                <Text style={styles.cardStripBalanceValue}>${activeCard.balance.toFixed(2)}</Text>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.noCard}>
+              <Text style={styles.noCardText}>AWAITING CARD SCAN</Text>
+            </View>
+          )}
+
+          {/* Category tabs */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll} contentContainerStyle={styles.catContent}>
+            {categories.map(cat => (
+              <TouchableOpacity
+                key={cat}
+                style={[styles.catTab, selectedCategory === cat && styles.catTabActive]}
+                onPress={() => setSelectedCategory(cat)}
+                activeOpacity={0.75}
+              >
+                <Text style={[styles.catTabText, selectedCategory === cat && styles.catTabTextActive]}>
+                  {cat.toUpperCase()}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* Products */}
+          <ScrollView style={styles.productsScroll} showsVerticalScrollIndicator={false}>
+            <View style={styles.productsGrid}>
+              {filteredItems.map(item => (
+                <ProductCard
+                  key={item._id}
+                  product={item}
+                  onAdd={() => addToCart(item, item.type)}
+                />
+              ))}
+            </View>
+          </ScrollView>
+        </View>
+
+        {/* RIGHT — Cart */}
+        <View style={styles.cartPanel}>
+          {/* Cart header */}
+          <View style={styles.cartHeader}>
+            <Text style={styles.cartTitle}>CART</Text>
+            {cart.length > 0 && (
+              <View style={styles.cartBadge}>
+                <Text style={styles.cartBadgeText}>{getTotalItems()}</Text>
+              </View>
+            )}
+          </View>
+          <View style={styles.cartRule} />
+
+          {cart.length === 0 ? (
+            <View style={styles.cartEmpty}>
+              <Text style={styles.cartEmptyIcon}>▱▱▱</Text>
+              <Text style={styles.cartEmptyTitle}>EMPTY</Text>
+              <Text style={styles.cartEmptySubtitle}>Add products to begin</Text>
+            </View>
+          ) : (
+            <>
+              <ScrollView style={styles.cartItems} showsVerticalScrollIndicator={false}>
+                {cart.map((item, index) => (
+                  <View key={item.id} style={styles.cartItem}>
+                    <View style={styles.cartItemTop}>
+                      <Text style={styles.cartItemIndex}>{String(index + 1).padStart(2, '0')}</Text>
+                      <Text style={styles.cartItemEmoji}>{item.emoji}</Text>
+                      <View style={styles.cartItemMeta}>
+                        <Text style={styles.cartItemName} numberOfLines={1}>{item.name.toUpperCase()}</Text>
+                        <Text style={styles.cartItemPrice}>${(item.price * item.quantity).toFixed(2)}</Text>
+                      </View>
+                      <TouchableOpacity onPress={() => removeFromCart(item.id)} style={styles.removeBtn}>
+                        <Text style={styles.removeBtnText}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <View style={styles.cartItemBottom}>
+                      <Text style={styles.unitPrice}>${item.price.toFixed(2)} / unit</Text>
+                      <View style={styles.qtyRow}>
+                        <TouchableOpacity onPress={() => updateQuantity(item.id, -1)} style={styles.qtyBtn}>
+                          <Text style={styles.qtyBtnText}>−</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.qtyValue}>{item.quantity}</Text>
+                        <TouchableOpacity onPress={() => updateQuantity(item.id, 1)} style={styles.qtyBtn}>
+                          <Text style={styles.qtyBtnText}>+</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                    <View style={styles.cartItemRule} />
+                  </View>
+                ))}
+              </ScrollView>
+
+              {/* Cart footer */}
+              <View style={styles.cartFooter}>
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>TOTAL</Text>
+                  <Text style={styles.totalValue}>${getTotalAmount().toFixed(2)}</Text>
+                </View>
+
+                {activeCard && (
+                  <View style={styles.balanceRow}>
+                    <Text style={styles.balanceLabel}>REMAINING</Text>
+                    <Text style={[
+                      styles.balanceValue,
+                      activeCard.balance - getTotalAmount() < 0 ? styles.balanceNeg : styles.balancePos
+                    ]}>
+                      ${(activeCard.balance - getTotalAmount()).toFixed(2)}
+                    </Text>
+                  </View>
+                )}
+
+                <TouchableOpacity
+                  style={[styles.payBtn, (!activeCard || loading) && styles.payBtnDisabled]}
+                  onPress={handlePayment}
+                  disabled={!activeCard || loading}
+                  activeOpacity={0.85}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#0a0a0a" size="small" />
+                  ) : (
+                    <Text style={styles.payBtnText}>CONFIRM PAYMENT →</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+        </View>
+      </Animated.View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: '#0a0a0a',
+  },
+  gridOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    flexDirection: 'row',
+  },
+  gridLine: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+  },
   container: {
     flex: 1,
     flexDirection: 'row',
   },
-  mainContent: {
+
+  // Marketplace (left)
+  marketplace: {
     flex: 1,
+    borderRightWidth: 1,
+    borderRightColor: '#161616',
   },
   header: {
-    padding: 20,
-    paddingTop: 40,
+    paddingHorizontal: 20,
+    paddingTop: 56,
+    paddingBottom: 16,
   },
-  subtitle: {
-    fontSize: 14,
-    opacity: 0.7,
-    marginTop: 4,
-  },
-  cardInfo: {
+  logoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    margin: 20,
-    padding: 12,
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    borderRadius: 8,
+    gap: 8,
+    marginBottom: 6,
   },
-  cardDot: {
+  logoMark: {
     width: 8,
     height: 8,
-    borderRadius: 4,
-    backgroundColor: '#10b981',
+    backgroundColor: '#5ae8c8',
+    transform: [{ rotate: '45deg' }],
+  },
+  logoText: {
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 4,
+    color: '#f0f0f0',
+  },
+  logoThin: {
+    fontWeight: '300',
+  },
+  tagline: {
+    fontSize: 8,
+    letterSpacing: 3,
+    color: '#2a2a2a',
+    fontWeight: '700',
+    marginBottom: 14,
+  },
+  headerRule: {
+    height: 1,
+    backgroundColor: '#161616',
+  },
+
+  // Card strip
+  cardStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 20,
+    marginTop: 14,
+    marginBottom: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: '#0f0f0f',
+    borderWidth: 1,
+    borderColor: '#1a1a1a',
+    borderLeftWidth: 3,
+    borderLeftColor: '#5ae8c8',
+  },
+  cardStripDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#5ae8c8',
     marginRight: 12,
   },
-  cardText: {
-    fontSize: 14,
-    fontWeight: '600',
+  cardStripInfo: {
+    flex: 1,
   },
-  cardBalance: {
-    fontSize: 12,
-    opacity: 0.7,
+  cardStripName: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 2,
+    color: '#e0e0e0',
+  },
+  cardStripUid: {
+    fontSize: 9,
+    color: '#333',
+    letterSpacing: 1,
     marginTop: 2,
   },
-  categoryTabs: {
+  cardStripBalance: {
+    alignItems: 'flex-end',
+  },
+  cardStripBalanceLabel: {
+    fontSize: 8,
+    letterSpacing: 2,
+    color: '#333',
+    fontWeight: '700',
+  },
+  cardStripBalanceValue: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#5ae8c8',
+    letterSpacing: 0.5,
+  },
+  noCard: {
+    marginHorizontal: 20,
+    marginTop: 14,
+    marginBottom: 4,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#1a1a1a',
+    borderStyle: 'dashed',
+    alignItems: 'center',
+  },
+  noCardText: {
+    fontSize: 8,
+    letterSpacing: 3,
+    color: '#2a2a2a',
+    fontWeight: '700',
+  },
+
+  // Category tabs
+  catScroll: {
+    marginTop: 16,
+    maxHeight: 40,
+  },
+  catContent: {
     paddingHorizontal: 20,
-    marginBottom: 16,
+    gap: 8,
   },
-  categoryTab: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginRight: 8,
-    borderRadius: 20,
-    backgroundColor: '#f3f4f6',
+  catTab: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: '#1e1e1e',
+    backgroundColor: 'transparent',
   },
-  categoryTabActive: {
-    backgroundColor: '#8b5cf6',
+  catTabActive: {
+    backgroundColor: '#5ae8c8',
+    borderColor: '#5ae8c8',
   },
-  categoryTabText: {
-    fontSize: 14,
-    color: '#6b7280',
+  catTabText: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 2,
+    color: '#333',
   },
-  categoryTabTextActive: {
-    color: '#fff',
-    fontWeight: '600',
+  catTabTextActive: {
+    color: '#0a0a0a',
+  },
+
+  // Products
+  productsScroll: {
+    flex: 1,
+    marginTop: 16,
   },
   productsGrid: {
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 32,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    gap: 10,
   },
-  cartSection: {
-    width: 300,
+
+  // Cart panel (right)
+  cartPanel: {
+    width: 280,
+    backgroundColor: '#080808',
     borderLeftWidth: 1,
-    borderLeftColor: '#e5e7eb',
-    backgroundColor: '#f9fafb',
+    borderLeftColor: '#161616',
   },
   cartHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 20,
-    paddingTop: 40,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    paddingHorizontal: 20,
+    paddingTop: 56,
+    paddingBottom: 16,
+    gap: 10,
   },
   cartTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginRight: 8,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 4,
+    color: '#e0e0e0',
   },
   cartBadge: {
-    backgroundColor: '#8b5cf6',
-    borderRadius: 12,
-    paddingHorizontal: 8,
+    backgroundColor: '#e8ff5a',
+    paddingHorizontal: 7,
     paddingVertical: 2,
-    minWidth: 24,
+    minWidth: 22,
     alignItems: 'center',
   },
   cartBadgeText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
+    color: '#0a0a0a',
+    fontSize: 10,
+    fontWeight: '800',
   },
+  cartRule: {
+    height: 1,
+    backgroundColor: '#161616',
+    marginHorizontal: 20,
+  },
+
+  // Empty
   cartEmpty: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 40,
+    gap: 8,
   },
-  cartEmptyText: {
-    fontSize: 48,
+  cartEmptyIcon: {
+    fontSize: 20,
+    color: '#1e1e1e',
+    letterSpacing: 4,
     marginBottom: 8,
   },
-  cartEmptySubtext: {
-    fontSize: 14,
-    opacity: 0.5,
+  cartEmptyTitle: {
+    fontSize: 10,
+    letterSpacing: 4,
+    color: '#222',
+    fontWeight: '800',
   },
+  cartEmptySubtitle: {
+    fontSize: 10,
+    color: '#1e1e1e',
+    letterSpacing: 1,
+  },
+
+  // Cart items
   cartItems: {
     flex: 1,
-    padding: 16,
+    paddingTop: 8,
   },
   cartItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 12,
-    marginBottom: 8,
-    backgroundColor: '#fff',
-    borderRadius: 8,
+    paddingHorizontal: 20,
+    paddingTop: 14,
   },
-  cartItemInfo: {
+  cartItemTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
+    gap: 8,
+    marginBottom: 8,
+  },
+  cartItemIndex: {
+    fontSize: 9,
+    color: '#2a2a2a',
+    fontWeight: '700',
+    letterSpacing: 1,
+    width: 18,
   },
   cartItemEmoji: {
-    fontSize: 24,
-    marginRight: 12,
+    fontSize: 18,
   },
-  cartItemDetails: {
+  cartItemMeta: {
     flex: 1,
   },
   cartItemName: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    color: '#d0d0d0',
   },
   cartItemPrice: {
     fontSize: 12,
-    opacity: 0.7,
+    color: '#e8ff5a',
+    fontWeight: '700',
     marginTop: 2,
   },
-  cartItemActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  quantityBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#f3f4f6',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  quantity: {
-    marginHorizontal: 8,
-    fontSize: 14,
-    fontWeight: '600',
-  },
   removeBtn: {
-    marginLeft: 8,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#fee2e2',
-    justifyContent: 'center',
+    width: 22,
+    height: 22,
     alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#222',
   },
   removeBtnText: {
-    color: '#ef4444',
-    fontSize: 20,
-    fontWeight: 'bold',
+    color: '#333',
+    fontSize: 10,
+    fontWeight: '700',
   },
-  cartFooter: {
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-  },
-  cartTotal: {
+  cartItemBottom: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    alignItems: 'center',
+    paddingLeft: 26,
   },
-  cartTotalLabel: {
-    fontSize: 16,
-    fontWeight: '600',
+  unitPrice: {
+    fontSize: 9,
+    color: '#2a2a2a',
+    letterSpacing: 0.5,
   },
-  cartTotalValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#8b5cf6',
+  qtyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 0,
   },
-  payButton: {
-    backgroundColor: '#8b5cf6',
-    padding: 16,
-    borderRadius: 8,
+  qtyBtn: {
+    width: 26,
+    height: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#111',
+    borderWidth: 1,
+    borderColor: '#1e1e1e',
+  },
+  qtyBtnText: {
+    color: '#888',
+    fontSize: 14,
+    fontWeight: '300',
+    lineHeight: 18,
+  },
+  qtyValue: {
+    width: 28,
+    textAlign: 'center',
+    fontSize: 11,
+    color: '#e0e0e0',
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  cartItemRule: {
+    height: 1,
+    backgroundColor: '#111',
+    marginTop: 14,
+  },
+
+  // Cart footer
+  cartFooter: {
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#161616',
+    gap: 10,
+  },
+  totalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+  },
+  totalLabel: {
+    fontSize: 9,
+    letterSpacing: 3,
+    color: '#333',
+    fontWeight: '700',
+  },
+  totalValue: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#e8ff5a',
+    letterSpacing: -0.5,
+  },
+  balanceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
-  payButtonDisabled: {
-    backgroundColor: '#d1d5db',
+  balanceLabel: {
+    fontSize: 8,
+    letterSpacing: 3,
+    color: '#2a2a2a',
+    fontWeight: '700',
   },
-  payButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  balanceValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  balancePos: { color: '#5ae8c8' },
+  balanceNeg: { color: '#ef4444' },
+  payBtn: {
+    backgroundColor: '#e8ff5a',
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  payBtnDisabled: {
+    backgroundColor: '#1a1a1a',
+  },
+  payBtnText: {
+    color: '#0a0a0a',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 3,
   },
 });

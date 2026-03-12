@@ -208,12 +208,7 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
 
-            <View style={styles.credentialsPill}>
-              <ThemedText style={styles.credText}>
-                password{' '}
-                <ThemedText style={styles.credMono}>1234</ThemedText>
-              </ThemedText>
-            </View>
+            
           </View>
 
           {/* Footer */}

@@ -1,10 +1,20 @@
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, ScrollView, RefreshControl, View, Text } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import {
+  StyleSheet,
+  ScrollView,
+  RefreshControl,
+  View,
+  Text,
+  Animated,
+  Dimensions,
+} from 'react-native';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import BalanceCard from '@/components/BalanceCard';
 import apiService, { Card, Transaction } from '@/services/api';
 import mqttService, { TOPICS } from '@/services/mqtt';
+
+const { width } = Dimensions.get('window');
 
 export default function DashboardScreen() {
   const [activeCard, setActiveCard] = useState<Card | null>(null);
@@ -17,10 +27,18 @@ export default function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [mqttConnected, setMqttConnected] = useState(false);
 
-  // Get current user
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
   const currentUser = (global as any).currentUser || { role: 'agent', name: 'User' };
 
   useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 500,
+      useNativeDriver: true,
+    }).start();
+
     loadDashboardData();
     connectMqtt();
 
@@ -29,14 +47,24 @@ export default function DashboardScreen() {
     };
   }, []);
 
+  useEffect(() => {
+    if (mqttConnected) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.6, duration: 900, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 900, useNativeDriver: true }),
+        ])
+      ).start();
+    } else {
+      pulseAnim.setValue(1);
+    }
+  }, [mqttConnected]);
+
   const connectMqtt = async () => {
     try {
       await mqttService.connect();
       setMqttConnected(true);
-
-      // Listen for card status updates
       mqttService.subscribe(TOPICS.STATUS, async (message) => {
-        console.log('Card detected:', message);
         if (message.uid) {
           try {
             const card = await apiService.getCard(message.uid);
@@ -46,16 +74,12 @@ export default function DashboardScreen() {
           }
         }
       });
-
-      // Listen for balance updates
       mqttService.subscribe(TOPICS.BALANCE, (message) => {
-        console.log('Balance updated:', message);
         if (activeCard && message.uid === activeCard.uid) {
           setActiveCard({ ...activeCard, balance: message.balance });
         }
       });
     } catch (err) {
-      console.error('MQTT connection failed:', err);
       setMqttConnected(false);
     }
   };
@@ -66,29 +90,18 @@ export default function DashboardScreen() {
         apiService.getAllCards(),
         apiService.getTransactions(),
       ]);
-
-      // Calculate stats
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-
-      const todayTxns = transactions.filter(
-        (t) => new Date(t.timestamp) >= today
-      );
-
+      const todayTxns = transactions.filter((t) => new Date(t.timestamp) >= today);
       const totalVolume = transactions.reduce((sum, t) => sum + t.amount, 0);
       const avgTransaction = transactions.length > 0 ? totalVolume / transactions.length : 0;
-
       setStats({
         totalCards: cards.length,
         todayTransactions: todayTxns.length,
         totalVolume,
         avgTransaction,
       });
-
-      // Set most recently updated card as active
-      if (cards.length > 0) {
-        setActiveCard(cards[0]);
-      }
+      if (cards.length > 0) setActiveCard(cards[0]);
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
     }
@@ -100,189 +113,388 @@ export default function DashboardScreen() {
     setRefreshing(false);
   };
 
+  const isAgent = currentUser.role === 'agent';
+
   return (
     <ScrollView
       style={styles.container}
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor="#e8ff5a"
+          colors={['#e8ff5a']}
+        />
       }
     >
-      <ThemedView style={styles.header}>
-        <View style={styles.headerTop}>
-          <View>
-            <ThemedText type="title">EdgeWallet</ThemedText>
-            <ThemedText style={styles.subtitle}>RFID Payment System</ThemedText>
+      {/* Background grid */}
+      <View style={styles.gridOverlay} pointerEvents="none">
+        {[...Array(6)].map((_, i) => (
+          <View key={i} style={[styles.gridLine, { left: (width / 6) * i }]} />
+        ))}
+      </View>
+
+      <Animated.View style={{ opacity: fadeAnim }}>
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={styles.headerTop}>
+            <View>
+              <View style={styles.logoRow}>
+                <View style={styles.logoMark} />
+                <Text style={styles.logoText}>
+                  EDGE<Text style={styles.logoThin}>WALLET</Text>
+                </Text>
+              </View>
+              <Text style={styles.tagline}>RFID PAYMENT INFRASTRUCTURE</Text>
+            </View>
+
+            <View style={[styles.rolePill, isAgent ? styles.rolePillAgent : styles.rolePillSales]}>
+              <Text style={[styles.roleText, isAgent ? styles.roleTextAgent : styles.roleTextSales]}>
+                {isAgent ? 'AGENT' : 'SALES'}
+              </Text>
+            </View>
           </View>
-          <View style={styles.roleBadge}>
-            <Text style={styles.roleBadgeText}>
-              {currentUser.role === 'agent' ? '👤 Agent' : '🛒 Sales'}
+
+          {/* Connection status */}
+          <View style={styles.statusRow}>
+            <View style={styles.statusDotWrapper}>
+              <Animated.View
+                style={[
+                  styles.statusDotPulse,
+                  mqttConnected ? styles.dotPulseOn : styles.dotPulseOff,
+                  { transform: [{ scale: pulseAnim }] },
+                ]}
+              />
+              <View style={[styles.statusDot, mqttConnected ? styles.dotOn : styles.dotOff]} />
+            </View>
+            <Text style={styles.statusText}>
+              {mqttConnected ? 'CONNECTED' : 'DISCONNECTED'}
             </Text>
           </View>
-        </View>
-        <View style={styles.statusRow}>
-          <View style={[styles.statusDot, mqttConnected ? styles.connected : styles.disconnected]} />
-          <Text style={styles.statusText}>
-            {mqttConnected ? 'Connected' : 'Disconnected'}
-          </Text>
-        </View>
-      </ThemedView>
 
-      {/* Active Card */}
-      {activeCard && (
-        <View style={styles.section}>
-          <BalanceCard card={activeCard} />
+          <View style={styles.headerRule} />
         </View>
-      )}
 
-      {/* Stats Grid */}
-      <View style={styles.statsGrid}>
-        <View style={styles.statCard}>
-          <ThemedText style={styles.statLabel}>Total Cards</ThemedText>
-          <ThemedText style={styles.statValue}>{stats.totalCards}</ThemedText>
-        </View>
-        <View style={styles.statCard}>
-          <ThemedText style={styles.statLabel}>Today's Txns</ThemedText>
-          <ThemedText style={styles.statValue}>{stats.todayTransactions}</ThemedText>
-        </View>
-        <View style={styles.statCard}>
-          <ThemedText style={styles.statLabel}>Total Volume</ThemedText>
-          <ThemedText style={styles.statValue}>${stats.totalVolume.toFixed(2)}</ThemedText>
-        </View>
-        <View style={styles.statCard}>
-          <ThemedText style={styles.statLabel}>Avg. Transaction</ThemedText>
-          <ThemedText style={styles.statValue}>${stats.avgTransaction.toFixed(2)}</ThemedText>
-        </View>
-      </View>
-
-      {!activeCard && (
-        <View style={styles.emptyState}>
-          <ThemedText style={styles.emptyText}>
-            Scan an RFID card to begin...
-          </ThemedText>
-        </View>
-      )}
-
-      {/* Role-specific quick actions */}
-      <View style={styles.quickActions}>
-        <ThemedText style={styles.quickActionsTitle}>Quick Actions</ThemedText>
-        {currentUser.role === 'agent' ? (
-          <ThemedText style={styles.quickActionsText}>
-            • Navigate to "Top Up" to add money to cards{'\n'}
-            • Scan RFID card to auto-populate UID{'\n'}
-            • Register new cards with holder names
-          </ThemedText>
+        {/* Active Card */}
+        {activeCard ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>ACTIVE CARD</Text>
+            <BalanceCard card={activeCard} />
+          </View>
         ) : (
-          <ThemedText style={styles.quickActionsText}>
-            • Navigate to "Payment" to process sales{'\n'}
-            • Browse products by category{'\n'}
-            • Add items to cart and checkout
-          </ThemedText>
+          <View style={styles.emptyState}>
+            <View style={styles.emptyIcon}>
+              <Text style={styles.emptyIconText}>⬡</Text>
+            </View>
+            <Text style={styles.emptyTitle}>AWAITING CARD</Text>
+            <Text style={styles.emptySubtitle}>Scan an RFID card to begin</Text>
+          </View>
         )}
-      </View>
+
+        {/* Stats Grid */}
+        <View style={styles.statsSection}>
+          <Text style={styles.sectionLabel}>METRICS</Text>
+          <View style={styles.statsGrid}>
+            <StatTile label="TOTAL CARDS" value={String(stats.totalCards)} accent="#e8ff5a" />
+            <StatTile label="TODAY'S TXN" value={String(stats.todayTransactions)} accent="#5ae8c8" />
+            <StatTile label="TOTAL VOL." value={`$${stats.totalVolume.toFixed(0)}`} accent="#e8ff5a" />
+            <StatTile label="AVG. TXN" value={`$${stats.avgTransaction.toFixed(0)}`} accent="#5ae8c8" />
+          </View>
+        </View>
+
+        {/* Quick Actions */}
+        <View style={styles.actionsSection}>
+          <Text style={styles.sectionLabel}>QUICK ACTIONS</Text>
+          <View style={styles.actionsList}>
+            {(isAgent
+              ? [
+                  ['01', 'Navigate to Top Up to add funds to cards'],
+                  ['02', 'Scan RFID card to auto-populate UID'],
+                  ['03', 'Register new cards with holder names'],
+                ]
+              : [
+                  ['01', 'Navigate to Payment to process sales'],
+                  ['02', 'Browse products by category'],
+                  ['03', 'Add items to cart and checkout'],
+                ]
+            ).map(([num, text]) => (
+              <View key={num} style={styles.actionRow}>
+                <Text style={[styles.actionNum, isAgent ? styles.accentYellow : styles.accentTeal]}>
+                  {num}
+                </Text>
+                <View style={styles.actionRuleDot} />
+                <Text style={styles.actionText}>{text}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* Footer */}
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>TEAM ID · k2m2zI</Text>
+        </View>
+      </Animated.View>
     </ScrollView>
+  );
+}
+
+function StatTile({ label, value, accent }: { label: string; value: string; accent: string }) {
+  return (
+    <View style={styles.statTile}>
+      <View style={[styles.statAccentBar, { backgroundColor: accent }]} />
+      <Text style={styles.statLabel}>{label}</Text>
+      <Text style={[styles.statValue, { color: accent }]}>{value}</Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#0a0a0a',
   },
+  gridOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+  },
+  gridLine: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+  },
+
+  // Header
   header: {
-    padding: 20,
+    paddingHorizontal: 24,
+    paddingTop: 60,
+    paddingBottom: 20,
   },
   headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 12,
+    marginBottom: 16,
   },
-  roleBadge: {
-    backgroundColor: '#8b5cf6',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
+  logoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
   },
-  roleBadgeText: {
-    color: '#fff',
-    fontSize: 12,
+  logoMark: {
+    width: 8,
+    height: 8,
+    backgroundColor: '#e8ff5a',
+    transform: [{ rotate: '45deg' }],
+  },
+  logoText: {
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: 4,
+    color: '#f0f0f0',
+  },
+  logoThin: {
+    fontWeight: '300',
+  },
+  tagline: {
+    fontSize: 9,
+    letterSpacing: 3,
+    color: '#333',
     fontWeight: '600',
   },
-  subtitle: {
-    fontSize: 14,
-    opacity: 0.7,
-    marginTop: 4,
+  rolePill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
   },
+  rolePillAgent: {
+    borderColor: '#e8ff5a',
+    backgroundColor: 'rgba(232,255,90,0.06)',
+  },
+  rolePillSales: {
+    borderColor: '#5ae8c8',
+    backgroundColor: 'rgba(90,232,200,0.06)',
+  },
+  roleText: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 3,
+  },
+  roleTextAgent: { color: '#e8ff5a' },
+  roleTextSales: { color: '#5ae8c8' },
   statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+    marginBottom: 20,
   },
+  statusDotWrapper: {
+    width: 10,
+    height: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusDotPulse: {
+    position: 'absolute',
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    opacity: 0.3,
+  },
+  dotPulseOn: { backgroundColor: '#10b981' },
+  dotPulseOff: { backgroundColor: '#ef4444' },
   statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 8,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
-  connected: {
-    backgroundColor: '#10b981',
-  },
-  disconnected: {
-    backgroundColor: '#ef4444',
-  },
+  dotOn: { backgroundColor: '#10b981' },
+  dotOff: { backgroundColor: '#ef4444' },
   statusText: {
-    fontSize: 12,
-    color: '#6b7280',
+    fontSize: 9,
+    letterSpacing: 3,
+    color: '#444',
+    fontWeight: '700',
   },
+  headerRule: {
+    height: 1,
+    backgroundColor: '#161616',
+  },
+
+  // Sections
   section: {
-    padding: 20,
+    paddingHorizontal: 24,
+    paddingTop: 28,
+  },
+  sectionLabel: {
+    fontSize: 9,
+    letterSpacing: 3,
+    color: '#333',
+    fontWeight: '700',
+    marginBottom: 14,
+  },
+
+  // Empty state
+  emptyState: {
+    paddingVertical: 48,
+    alignItems: 'center',
+  },
+  emptyIcon: {
+    marginBottom: 16,
+  },
+  emptyIconText: {
+    fontSize: 32,
+    color: '#1e1e1e',
+  },
+  emptyTitle: {
+    fontSize: 11,
+    letterSpacing: 4,
+    color: '#2a2a2a',
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  emptySubtitle: {
+    fontSize: 11,
+    color: '#2a2a2a',
+    letterSpacing: 1,
+  },
+
+  // Stats
+  statsSection: {
+    paddingHorizontal: 24,
+    paddingTop: 32,
   },
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    padding: 10,
+    gap: 10,
   },
-  statCard: {
-    width: '48%',
-    margin: '1%',
-    padding: 16,
-    backgroundColor: 'rgba(139, 92, 246, 0.1)',
-    borderRadius: 12,
+  statTile: {
+    width: '47.5%',
+    backgroundColor: '#0f0f0f',
     borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.2)',
+    borderColor: '#1a1a1a',
+    padding: 16,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  statAccentBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 2,
   },
   statLabel: {
-    fontSize: 12,
-    opacity: 0.7,
-    marginBottom: 8,
+    fontSize: 8,
+    letterSpacing: 2.5,
+    color: '#333',
+    fontWeight: '700',
+    marginBottom: 10,
+    marginTop: 4,
   },
   statValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: 26,
+    fontWeight: '800',
+    letterSpacing: -0.5,
   },
-  emptyState: {
-    padding: 40,
+
+  // Actions
+  actionsSection: {
+    paddingHorizontal: 24,
+    paddingTop: 32,
+  },
+  actionsList: {
+    gap: 0,
+  },
+  actionRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#111',
+    gap: 12,
   },
-  emptyText: {
-    fontSize: 16,
-    opacity: 0.5,
-    textAlign: 'center',
+  actionNum: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+    width: 20,
   },
-  quickActions: {
-    margin: 20,
-    padding: 16,
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.2)',
+  accentYellow: { color: '#e8ff5a' },
+  accentTeal: { color: '#5ae8c8' },
+  actionRuleDot: {
+    width: 3,
+    height: 3,
+    backgroundColor: '#222',
+    borderRadius: 2,
   },
-  quickActionsTitle: {
-    fontSize: 16,
+  actionText: {
+    fontSize: 12,
+    color: '#3a3a3a',
+    flex: 1,
+    letterSpacing: 0.3,
+    lineHeight: 18,
+  },
+
+  // Footer
+  footer: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    marginTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#111',
+  },
+  footerText: {
+    fontSize: 9,
+    color: '#1e1e1e',
+    letterSpacing: 3,
     fontWeight: '600',
-    marginBottom: 8,
-  },
-  quickActionsText: {
-    fontSize: 14,
-    opacity: 0.8,
-    lineHeight: 22,
   },
 });

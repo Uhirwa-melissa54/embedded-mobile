@@ -1,17 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   ScrollView,
   View,
+  Text,
   TextInput,
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  Animated,
+  Dimensions,
+  Platform,
 } from 'react-native';
-import { ThemedView } from '@/components/themed-view';
-import { ThemedText } from '@/components/themed-text';
 import apiService, { Card } from '@/services/api';
 import mqttService, { TOPICS } from '@/services/mqtt';
+
+const { width } = Dimensions.get('window');
+
+const QUICK_AMOUNTS = [10, 25, 50, 100];
 
 export default function TopupScreen() {
   const [uid, setUid] = useState('');
@@ -19,9 +25,19 @@ export default function TopupScreen() {
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
   const [activeCard, setActiveCard] = useState<Card | null>(null);
+  const [nameFocused, setNameFocused] = useState(false);
+  const [amountFocused, setAmountFocused] = useState(false);
+
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const cardAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Listen for card scans
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 500,
+      useNativeDriver: true,
+    }).start();
+
     const handleCardStatus = async (message: any) => {
       if (message.uid) {
         setUid(message.uid);
@@ -29,8 +45,13 @@ export default function TopupScreen() {
           const card = await apiService.getCard(message.uid);
           setActiveCard(card);
           setHolderName(card.holderName);
-        } catch (err) {
-          // New card
+          Animated.spring(cardAnim, {
+            toValue: 1,
+            useNativeDriver: true,
+            tension: 80,
+            friction: 12,
+          }).start();
+        } catch {
           setActiveCard(null);
           setHolderName('');
         }
@@ -38,216 +59,508 @@ export default function TopupScreen() {
     };
 
     mqttService.subscribe(TOPICS.STATUS, handleCardStatus);
-
-    return () => {
-      mqttService.unsubscribe(TOPICS.STATUS, handleCardStatus);
-    };
+    return () => mqttService.unsubscribe(TOPICS.STATUS, handleCardStatus);
   }, []);
 
   const handleTopup = async () => {
-    if (!uid) {
-      Alert.alert('Error', 'Please scan a card first');
-      return;
-    }
-
-    if (!amount || parseFloat(amount) <= 0) {
-      Alert.alert('Error', 'Please enter a valid amount');
-      return;
-    }
-
-    if (!activeCard && !holderName) {
-      Alert.alert('Error', 'Please enter a holder name for new cards');
-      return;
-    }
+    if (!uid) { Alert.alert('No Card', 'Scan a card first'); return; }
+    if (!amount || parseFloat(amount) <= 0) { Alert.alert('Invalid Amount', 'Enter a valid amount'); return; }
+    if (!activeCard && !holderName) { Alert.alert('Missing Name', 'Enter a holder name for new cards'); return; }
 
     setLoading(true);
-
     try {
       const result = await apiService.topup({
         uid,
         amount: parseFloat(amount),
         holderName: holderName || undefined,
       });
-
-      Alert.alert('Success', `Top-up successful! New balance: $${result.card.balance.toFixed(2)}`);
-      
-      // Update active card
+      Alert.alert('Top-Up Complete', `New balance: $${result.card.balance.toFixed(2)}`);
       setActiveCard(result.card);
       setAmount('');
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Top-up failed');
+      Alert.alert('Top-Up Failed', err.message || 'Unknown error');
     } finally {
       setLoading(false);
     }
   };
 
+  const cardScale = cardAnim.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] });
+  const projected = activeCard ? activeCard.balance + (parseFloat(amount) || 0) : null;
+
   return (
-    <ScrollView style={styles.container}>
-      <ThemedView style={styles.header}>
-        <ThemedText type="title">Top Up Card</ThemedText>
-        <ThemedText style={styles.subtitle}>Add money to your RFID card</ThemedText>
-      </ThemedView>
-
-      {activeCard && (
-        <View style={styles.cardInfo}>
-          <View style={styles.infoRow}>
-            <ThemedText style={styles.infoLabel}>Card UID:</ThemedText>
-            <ThemedText style={styles.infoValue}>{activeCard.uid}</ThemedText>
-          </View>
-          <View style={styles.infoRow}>
-            <ThemedText style={styles.infoLabel}>Holder:</ThemedText>
-            <ThemedText style={styles.infoValue}>{activeCard.holderName}</ThemedText>
-          </View>
-          <View style={styles.infoRow}>
-            <ThemedText style={styles.infoLabel}>Current Balance:</ThemedText>
-            <ThemedText style={[styles.infoValue, styles.balance]}>
-              ${activeCard.balance.toFixed(2)}
-            </ThemedText>
-          </View>
-        </View>
-      )}
-
-      <View style={styles.form}>
-        <View style={styles.inputGroup}>
-          <ThemedText style={styles.label}>Card UID</ThemedText>
-          <TextInput
-            style={styles.input}
-            value={uid}
-            onChangeText={setUid}
-            placeholder="Scan card to auto-fill"
-            placeholderTextColor="#9ca3af"
-            editable={false}
-          />
-        </View>
-
-        <View style={styles.inputGroup}>
-          <ThemedText style={styles.label}>Card Holder Name</ThemedText>
-          <TextInput
-            style={styles.input}
-            value={holderName}
-            onChangeText={setHolderName}
-            placeholder="Enter name for new cards"
-            placeholderTextColor="#9ca3af"
-            editable={!activeCard}
-          />
-        </View>
-
-        <View style={styles.inputGroup}>
-          <ThemedText style={styles.label}>Amount ($)</ThemedText>
-          <TextInput
-            style={styles.input}
-            value={amount}
-            onChangeText={setAmount}
-            placeholder="0.00"
-            placeholderTextColor="#9ca3af"
-            keyboardType="decimal-pad"
-          />
-        </View>
-
-        <TouchableOpacity
-          style={[styles.button, (!uid || loading) && styles.buttonDisabled]}
-          onPress={handleTopup}
-          disabled={!uid || loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <ThemedText style={styles.buttonText}>Confirm Top Up</ThemedText>
-          )}
-        </TouchableOpacity>
+    <View style={styles.root}>
+      {/* BG grid */}
+      <View style={styles.gridOverlay} pointerEvents="none">
+        {[...Array(6)].map((_, i) => (
+          <View key={i} style={[styles.gridLine, { left: (width / 6) * i }]} />
+        ))}
       </View>
 
-      {!uid && (
-        <View style={styles.emptyState}>
-          <ThemedText style={styles.emptyText}>
-            Scan an RFID card to begin top-up
-          </ThemedText>
-        </View>
-      )}
-    </ScrollView>
+      <ScrollView style={styles.scroll} keyboardShouldPersistTaps="handled">
+        <Animated.View style={{ opacity: fadeAnim }}>
+
+          {/* Header */}
+          <View style={styles.header}>
+            <View style={styles.logoRow}>
+              <View style={styles.logoMark} />
+              <Text style={styles.logoText}>TOP<Text style={styles.logoThin}>UP</Text></Text>
+            </View>
+            <Text style={styles.tagline}>ADD FUNDS TO RFID CARD</Text>
+            <View style={styles.headerRule} />
+          </View>
+
+          {/* Card panel */}
+          {activeCard ? (
+            <Animated.View style={[styles.cardPanel, { transform: [{ scale: cardScale }] }]}>
+              <View style={styles.cardPanelTop}>
+                <View style={styles.cardPanelLeft}>
+                  <Text style={styles.cardPanelLabel}>CARD UID</Text>
+                  <Text style={styles.cardPanelUid}>{activeCard.uid}</Text>
+                </View>
+                <View style={styles.cardStatusBadge}>
+                  <View style={styles.cardStatusDot} />
+                  <Text style={styles.cardStatusText}>ACTIVE</Text>
+                </View>
+              </View>
+
+              <View style={styles.cardPanelDivider} />
+
+              <View style={styles.cardPanelBottom}>
+                <View>
+                  <Text style={styles.cardPanelLabel}>HOLDER</Text>
+                  <Text style={styles.cardPanelHolder}>{activeCard.holderName.toUpperCase()}</Text>
+                </View>
+                <View style={styles.balanceCol}>
+                  <Text style={styles.cardPanelLabel}>BALANCE</Text>
+                  <Text style={styles.cardPanelBalance}>${activeCard.balance.toFixed(2)}</Text>
+                  {parseFloat(amount) > 0 && (
+                    <Text style={styles.cardPanelProjected}>→ ${projected?.toFixed(2)}</Text>
+                  )}
+                </View>
+              </View>
+            </Animated.View>
+          ) : (
+            <View style={styles.noCard}>
+              <Text style={styles.noCardIcon}>▱▱▱</Text>
+              <Text style={styles.noCardTitle}>AWAITING CARD SCAN</Text>
+              <Text style={styles.noCardSub}>Hold RFID card near reader</Text>
+            </View>
+          )}
+
+          {/* Form */}
+          <View style={styles.form}>
+            {/* UID (read-only) */}
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>CARD UID</Text>
+              <View style={styles.readonlyField}>
+                <Text style={styles.readonlyValue} numberOfLines={1}>
+                  {uid || '—'}
+                </Text>
+                <View style={styles.readonlyBadge}>
+                  <Text style={styles.readonlyBadgeText}>AUTO</Text>
+                </View>
+              </View>
+              <View style={styles.fieldUnderline} />
+            </View>
+
+            {/* Holder name */}
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>CARD HOLDER</Text>
+              <TextInput
+                style={[styles.fieldInput, nameFocused && styles.fieldInputFocused, activeCard && styles.fieldInputLocked]}
+                value={holderName}
+                onChangeText={setHolderName}
+                placeholder={activeCard ? activeCard.holderName : '—'}
+                placeholderTextColor="#2a2a2a"
+                editable={!activeCard}
+                onFocus={() => setNameFocused(true)}
+                onBlur={() => setNameFocused(false)}
+                autoCapitalize="words"
+              />
+              <View style={[styles.fieldUnderline, nameFocused && styles.fieldUnderlineFocused]} />
+              {activeCard && <Text style={styles.lockedHint}>LOCKED · EXISTING CARD</Text>}
+            </View>
+
+            {/* Amount */}
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>AMOUNT (USD)</Text>
+              <View style={styles.amountRow}>
+                <Text style={styles.amountPrefix}>$</Text>
+                <TextInput
+                  style={[styles.amountInput, amountFocused && styles.fieldInputFocused]}
+                  value={amount}
+                  onChangeText={setAmount}
+                  placeholder="0.00"
+                  placeholderTextColor="#2a2a2a"
+                  keyboardType="decimal-pad"
+                  onFocus={() => setAmountFocused(true)}
+                  onBlur={() => setAmountFocused(false)}
+                />
+              </View>
+              <View style={[styles.fieldUnderline, amountFocused && styles.fieldUnderlineFocused]} />
+            </View>
+
+            {/* Quick amounts */}
+            <View style={styles.quickRow}>
+              {QUICK_AMOUNTS.map(q => (
+                <TouchableOpacity
+                  key={q}
+                  style={[styles.quickBtn, amount === String(q) && styles.quickBtnActive]}
+                  onPress={() => setAmount(String(q))}
+                  activeOpacity={0.75}
+                >
+                  <Text style={[styles.quickBtnText, amount === String(q) && styles.quickBtnTextActive]}>
+                    +${q}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Confirm button */}
+            <TouchableOpacity
+              style={[styles.confirmBtn, (!uid || loading) && styles.confirmBtnDisabled]}
+              onPress={handleTopup}
+              disabled={!uid || loading}
+              activeOpacity={0.85}
+            >
+              {loading ? (
+                <ActivityIndicator color="#0a0a0a" size="small" />
+              ) : (
+                <Text style={[styles.confirmBtnText, (!uid || loading) && styles.confirmBtnTextDisabled]}>
+                  CONFIRM TOP-UP →
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Footer */}
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>TEAM ID · k2m2zI</Text>
+          </View>
+        </Animated.View>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
+    backgroundColor: '#0a0a0a',
   },
+  gridOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    flexDirection: 'row',
+  },
+  gridLine: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+  },
+  scroll: { flex: 1 },
+
+  // Header
   header: {
-    padding: 20,
-    paddingTop: 40,
+    paddingHorizontal: 24,
+    paddingTop: 60,
+    paddingBottom: 0,
   },
-  subtitle: {
-    fontSize: 14,
-    opacity: 0.7,
-    marginTop: 4,
+  logoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
   },
-  cardInfo: {
-    margin: 20,
-    padding: 16,
-    backgroundColor: 'rgba(139, 92, 246, 0.1)',
-    borderRadius: 12,
+  logoMark: {
+    width: 8,
+    height: 8,
+    backgroundColor: '#e8ff5a',
+    transform: [{ rotate: '45deg' }],
+  },
+  logoText: {
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: 4,
+    color: '#f0f0f0',
+  },
+  logoThin: { fontWeight: '300' },
+  tagline: {
+    fontSize: 9,
+    letterSpacing: 3,
+    color: '#2a2a2a',
+    fontWeight: '700',
+    marginBottom: 16,
+  },
+  headerRule: {
+    height: 1,
+    backgroundColor: '#161616',
+  },
+
+  // Card panel
+  cardPanel: {
+    marginHorizontal: 24,
+    marginTop: 24,
+    backgroundColor: '#0f0f0f',
     borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.2)',
+    borderColor: '#1e1e1e',
+    borderTopWidth: 2,
+    borderTopColor: '#e8ff5a',
+    padding: 18,
   },
-  infoRow: {
+  cardPanelTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    alignItems: 'flex-start',
+    marginBottom: 14,
   },
-  infoLabel: {
-    fontSize: 14,
-    opacity: 0.7,
+  cardPanelLeft: {},
+  cardPanelLabel: {
+    fontSize: 8,
+    letterSpacing: 2.5,
+    color: '#2a2a2a',
+    fontWeight: '700',
+    marginBottom: 4,
   },
-  infoValue: {
-    fontSize: 14,
-    fontWeight: '600',
+  cardPanelUid: {
+    fontSize: 12,
+    color: '#444',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    letterSpacing: 1,
   },
-  balance: {
-    color: '#10b981',
-    fontSize: 16,
-  },
-  form: {
-    padding: 20,
-  },
-  inputGroup: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 14,
-    marginBottom: 8,
-    fontWeight: '500',
-  },
-  input: {
+  cardStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: '#fff',
-    color: '#000',
+    borderColor: 'rgba(90,232,200,0.3)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
-  button: {
-    backgroundColor: '#8b5cf6',
-    padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 10,
+  cardStatusDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#5ae8c8',
   },
-  buttonDisabled: {
-    backgroundColor: '#d1d5db',
+  cardStatusText: {
+    fontSize: 8,
+    letterSpacing: 2,
+    color: '#5ae8c8',
+    fontWeight: '700',
   },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
+  cardPanelDivider: {
+    height: 1,
+    backgroundColor: '#161616',
+    marginBottom: 14,
+  },
+  cardPanelBottom: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  cardPanelHolder: {
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 2,
+    color: '#e0e0e0',
+  },
+  balanceCol: { alignItems: 'flex-end' },
+  cardPanelBalance: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#e8ff5a',
+    letterSpacing: -0.5,
+  },
+  cardPanelProjected: {
+    fontSize: 11,
+    color: '#5ae8c8',
     fontWeight: '600',
+    letterSpacing: 0.5,
+    marginTop: 2,
   },
-  emptyState: {
-    padding: 40,
+
+  // No card
+  noCard: {
+    marginHorizontal: 24,
+    marginTop: 24,
+    paddingVertical: 28,
+    borderWidth: 1,
+    borderColor: '#161616',
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    gap: 6,
+  },
+  noCardIcon: {
+    fontSize: 16,
+    color: '#1e1e1e',
+    letterSpacing: 4,
+    marginBottom: 4,
+  },
+  noCardTitle: {
+    fontSize: 9,
+    letterSpacing: 3,
+    color: '#222',
+    fontWeight: '800',
+  },
+  noCardSub: {
+    fontSize: 9,
+    color: '#1e1e1e',
+    letterSpacing: 1,
+  },
+
+  // Form
+  form: {
+    paddingHorizontal: 24,
+    paddingTop: 32,
+  },
+  fieldGroup: {
+    marginBottom: 30,
+  },
+  fieldLabel: {
+    fontSize: 8,
+    letterSpacing: 3,
+    color: '#333',
+    fontWeight: '700',
+    marginBottom: 10,
+  },
+  fieldInput: {
+    fontSize: 20,
+    color: '#f0f0f0',
+    paddingBottom: 8,
+    backgroundColor: 'transparent',
+    letterSpacing: 0.5,
+  },
+  fieldInputFocused: {
+    color: '#ffffff',
+  },
+  fieldInputLocked: {
+    color: '#3a3a3a',
+  },
+  readonlyField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 8,
+  },
+  readonlyValue: {
+    fontSize: 14,
+    color: '#333',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    letterSpacing: 1,
+    flex: 1,
+  },
+  readonlyBadge: {
+    borderWidth: 1,
+    borderColor: '#1e1e1e',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  readonlyBadgeText: {
+    fontSize: 7,
+    letterSpacing: 2,
+    color: '#2a2a2a',
+    fontWeight: '700',
+  },
+  fieldUnderline: {
+    height: 1,
+    backgroundColor: '#1a1a1a',
+  },
+  fieldUnderlineFocused: {
+    backgroundColor: '#e8ff5a',
+  },
+  lockedHint: {
+    fontSize: 7,
+    letterSpacing: 2,
+    color: '#222',
+    fontWeight: '700',
+    marginTop: 6,
+  },
+
+  // Amount
+  amountRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 4,
+    paddingBottom: 8,
+  },
+  amountPrefix: {
+    fontSize: 20,
+    color: '#333',
+    fontWeight: '300',
+  },
+  amountInput: {
+    flex: 1,
+    fontSize: 32,
+    color: '#f0f0f0',
+    fontWeight: '800',
+    letterSpacing: -0.5,
+    backgroundColor: 'transparent',
+  },
+
+  // Quick amounts
+  quickRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 32,
+    marginTop: 4,
+  },
+  quickBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#1e1e1e',
+    backgroundColor: 'transparent',
+  },
+  quickBtnActive: {
+    backgroundColor: '#e8ff5a',
+    borderColor: '#e8ff5a',
+  },
+  quickBtnText: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+    color: '#333',
+  },
+  quickBtnTextActive: {
+    color: '#0a0a0a',
+  },
+
+  // Confirm button
+  confirmBtn: {
+    backgroundColor: '#e8ff5a',
+    paddingVertical: 18,
     alignItems: 'center',
   },
-  emptyText: {
-    fontSize: 16,
-    opacity: 0.5,
-    textAlign: 'center',
+  confirmBtnDisabled: {
+    backgroundColor: '#111',
+    borderWidth: 1,
+    borderColor: '#1a1a1a',
+  },
+  confirmBtnText: {
+    color: '#0a0a0a',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 3,
+  },
+  confirmBtnTextDisabled: {
+    color: '#222',
+  },
+
+  // Footer
+  footer: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    marginTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#111',
+  },
+  footerText: {
+    fontSize: 9,
+    color: '#1e1e1e',
+    letterSpacing: 3,
+    fontWeight: '600',
   },
 });
