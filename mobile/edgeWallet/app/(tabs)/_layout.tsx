@@ -6,9 +6,7 @@ import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 
 export default function TabLayout() {
-  const currentUser = (global as any).currentUser || { role: 'agent' };
-  const isAgent = currentUser.role === 'agent';
-  const isSales = currentUser.role === 'sales';
+  const currentUser = (global as any).currentUser || { role: 'agent', name: 'User' };
 
   const handleLogout = () => {
     Alert.alert(
@@ -58,7 +56,6 @@ export default function TabLayout() {
           backgroundColor: '#080808',
           borderBottomWidth: 1,
           borderBottomColor: '#161616',
-          // Remove default shadow
           shadowOpacity: 0,
           elevation: 0,
         },
@@ -74,6 +71,9 @@ export default function TabLayout() {
         headerLeft: () => (
           <View style={styles.headerLeft}>
             <View style={styles.logoMark} />
+            <Text style={styles.userRole}>
+              {currentUser.role === 'agent' ? '👤' : '🛒'}
+            </Text>
           </View>
         ),
 
@@ -107,7 +107,6 @@ export default function TabLayout() {
         options={{
           title: 'TOP UP',
           headerTitle: 'TOP UP',
-          href: isSales ? null : undefined,
           tabBarIcon: ({ color, focused }) => (
             <TabIcon name="plus.circle.fill" color={color} focused={focused} accent="#e8ff5a" />
           ),
@@ -159,14 +158,18 @@ function TabIcon({
 const styles = StyleSheet.create({
   headerLeft: {
     marginLeft: 16,
-    justifyContent: 'center',
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
   },
   logoMark: {
     width: 8,
     height: 8,
     backgroundColor: '#e8ff5a',
     transform: [{ rotate: '45deg' }],
+  },
+  userRole: {
+    fontSize: 14,
   },
   logoutBtn: {
     marginRight: 16,
