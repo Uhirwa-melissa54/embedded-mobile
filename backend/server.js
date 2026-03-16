@@ -20,7 +20,7 @@ app.use(express.json());
 
 // Use 8690 for local dev, 9256 in production (VPS nginx/firewall already expect 9256).
 const PORT = 8256;
-const TEAM_ID = "bright_sandracp_isaac";
+const TEAM_ID = "K2z2mI";
 const MQTT_BROKER = "mqtt://157.173.101.159:1883";
 const MONGO_URI = process.env.MONGODB_URI;
 

@@ -1,8 +1,6 @@
 # EdgeWallet RFID Payment System
 
-
-
-A complete RFID-based payment system featuring real-time card management, transaction tracking, and a modern dashboard interface built with ESP8266, MQTT, and MongoDB.
+A complete RFID-based payment system featuring real-time card management, transaction tracking, mobile dashboard, and a modern web interface built with ESP8266, MQTT, React Native, and MongoDB.
 
 ---
 
@@ -11,6 +9,7 @@ A complete RFID-based payment system featuring real-time card management, transa
 - [Features](#-features)
 - [System Architecture](#-system-architecture)
 - [Quick Start](#-quick-start)
+- [Mobile App](#-mobile-app)
 - [Hardware Setup](#-hardware-setup)
 - [Configuration](#-configuration)
 - [API Reference](#-api-reference)
@@ -27,6 +26,9 @@ A complete RFID-based payment system featuring real-time card management, transa
 - **Balance Management** - Cumulative top-ups with persistent storage
 - **Transaction History** - Complete audit trail of all operations
 - **Cardholder Management** - Store and display cardholder names
+- **Mobile Dashboard** - React Native app for agents and salespersons
+- **Product Marketplace** - Browse and purchase products/services
+- **Multi-item Cart** - Add multiple items before checkout
 
 ### Technical Features
 - MongoDB Atlas integration for data persistence
@@ -34,6 +36,8 @@ A complete RFID-based payment system featuring real-time card management, transa
 - Modern glass-morphism UI design
 - Live system health monitoring
 - RESTful API for card operations
+- MQTT real-time communication
+- Cross-platform mobile app (iOS/Android)
 
 ---
 
@@ -42,14 +46,13 @@ A complete RFID-based payment system featuring real-time card management, transa
 ### Team Information
 | Component | Value |
 |-----------|-------|
-| **Team ID** | `K2m2zI` |
+| **Team ID** | `K2z2mI` |
 | **VPS Server** | 157.173.101.159 |
 | **Backend Port** | 8256 |
-| **Frontend Port** | 9256 |
 | **MQTT Broker** | 157.173.101.159:1883 |
 
 ### Technology Stack
-- **Mobile**: React Native, CSS3, JavaScript, Socket.IO Client
+- **Mobile**: React Native, Expo, TypeScript
 - **Backend**: Node.js, Express, Socket.IO, Mongoose, MQTT.js
 - **Database**: MongoDB Atlas
 - **Hardware**: ESP8266 (NodeMCU), MFRC522 RFID Reader
@@ -61,42 +64,98 @@ A complete RFID-based payment system featuring real-time card management, transa
 
 ### Local Development
 
-#### Option 1: Automated Scripts
-
-**Windows:**
-```bash
-start-local.bat
-```
-
-**Linux/Mac:**
-```bash
-chmod +x start-local.sh
-./start-local.sh
-```
-
-#### Option 2: Manual Start
-
-**Terminal 1 - Backend:**
+#### Backend
 ```bash
 cd backend
 npm install
 npm run dev
 ```
 
-**Terminal 2 - Mobile:**
+#### Mobile App
 ```bash
-cd mobile
+cd mobile/edgeWallet
 npm install
-npx expo start
+npm start
 ```
+
+Then press:
+- `i` for iOS simulator
+- `a` for Android emulator
+- Scan QR code with Expo Go app
 
 ### Access Points
 
 **Local Development:**
 - Backend API: http://localhost:8256
+- Mobile: Expo development server
 
 **Production (VPS):**
 - Backend API: http://157.173.101.159:8256
+
+---
+
+## 📱 Mobile App
+
+The EdgeWallet mobile app provides a complete interface for agents and salespersons to manage RFID cards and process payments.
+
+### Features
+
+#### 1. Dashboard
+- Real-time card detection via MQTT
+- Mastercard-style card visualization
+- Quick statistics (total cards, transactions, volume)
+- Connection status monitoring
+
+#### 2. Top-Up (Agent Role)
+- Scan RFID card to auto-populate UID
+- Add money to existing cards
+- Register new cards with holder name
+- Real-time balance updates
+
+#### 3. Payment (Salesperson Role)
+- Browse products and services by category
+- Multi-item cart with quantity control
+- Real-time balance checking
+- Secure payment processing
+- Receipt generation
+
+#### 4. Transaction History
+- View all transactions (top-ups and payments)
+- Filter by card UID
+- Detailed transaction information
+- Pull-to-refresh functionality
+
+### Mobile App Setup
+
+See [mobile/edgeWallet/README.md](mobile/edgeWallet/README.md) for detailed setup instructions.
+
+Quick start:
+```bash
+cd mobile/edgeWallet
+npm install
+npm start
+```
+
+### Mobile App Structure
+
+```
+mobile/edgeWallet/
+├── app/
+│   ├── (tabs)/
+│   │   ├── index.tsx          # Dashboard
+│   │   ├── topup.tsx          # Top-up screen
+│   │   ├── payment.tsx        # Payment/Marketplace
+│   │   └── transactions.tsx   # Transaction history
+│   └── _layout.tsx
+├── components/
+│   ├── BalanceCard.tsx        # Card visualization
+│   ├── ProductCard.tsx        # Product display
+│   └── TransactionItem.tsx    # Transaction list item
+├── services/
+│   ├── api.ts                 # HTTP API client
+│   └── mqtt.ts                # MQTT client
+└── README.md
+```
 
 ---
 
